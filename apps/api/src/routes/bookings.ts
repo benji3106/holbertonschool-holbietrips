@@ -23,27 +23,30 @@ export function registerBookingRoutes(app: FastifyInstance, context: RouteContex
   });
 
   app.get('/api/bookings/:id', { preHandler: context.requireUser }, async (request, reply) => {
-    const id = (request.params as RequestBody).id;
-    if (!isUuid(id)) return reply.code(400).send({ error: 'Identifiant invalide' });
+  const id = (request.params as RequestBody).id;
+  if (!isUuid(id)) return reply.code(400).send({ error: 'Identifiant invalide' });
 
-    const result = await pool.query(
-      `SELECT b.*,t.title,t.destination,t.description trip_description,t.departure_date,t.return_date,
-              p.status payment_status,p.card_last4,u.full_name traveler_name,u.email traveler_email
-       FROM bookings b
-       JOIN trips t ON t.id=b.trip_id
-       JOIN users u ON u.id=b.user_id
-       LEFT JOIN payments p ON p.booking_id=b.id
-       WHERE b.id=$1`,
-      [id]
-    );
-    if (!result.rowCount) return reply.code(404).send({ error: 'Réservation introuvable' });
+  const result = await pool.query(
+    `SELECT b.*,t.title,t.destination,t.description trip_description,t.departure_date,t.return_date,
+            p.status payment_status,p.card_last4,u.full_name traveler_name,u.email traveler_email
+     FROM bookings b
+     JOIN trips t ON t.id=b.trip_id
+     JOIN users u ON u.id=b.user_id
+     LEFT JOIN payments p ON p.booking_id=b.id
+     WHERE b.id=$1`,
+    [id]
+  );
+  if (!result.rowCount) return reply.code(404).send({ error: 'Réservation introuvable' });
 
-    const booking = result.rows[0];
-    if (booking.user_id !== request.authUser!.id) {
-      booking.itinerary_notes = `${booking.itinerary_notes} — ${flags.get('A01')}`;
-    }
-    return { booking };
-  });
+  const booking = result.rows[0];
+  const isOwner = booking.user_id === request.authUser!.id;
+  const isSupport = request.authUser!.role === 'support';
+  if (!isOwner && !isSupport) {
+    return reply.code(404).send({ error: 'Réservation introuvable' });
+  }
+
+  return { booking };
+});
 
   app.post('/api/bookings', { preHandler: context.requireUser }, async (request, reply) => {
     const body = request.body as RequestBody;

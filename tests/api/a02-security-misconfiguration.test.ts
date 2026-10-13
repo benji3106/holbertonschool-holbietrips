@@ -32,18 +32,19 @@ afterEach(async () => { await Promise.all(opened.splice(0).map(app => app.close(
 
 describe('A02 — The Debug Desk Left Open', () => {
   it('blocks the unauthorized access: a customer can no longer open the support diagnostics desk', async () => {
-    const app = await buildApp(fakePool(customer) as unknown as Pool, { serveFrontend: false, diagnosticsEnabled: true });
-    opened.push(app);
+  const app = await buildApp(fakePool(customer) as unknown as Pool, { serveFrontend: false, diagnosticsEnabled: true });
+  opened.push(app);
 
-    const response = await app.inject({
-      method: 'GET',
-      url: '/api/support/diagnostics',
-      headers: { authorization: 'Bearer customer-session' }
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({ error: 'Accès refusé' });
+  const response = await app.inject({
+    method: 'GET',
+    url: '/api/support/diagnostics',
+    headers: { authorization: 'Bearer customer-session' }
   });
+
+  expect(response.statusCode).toBe(403);
+  expect(response.json()).toEqual({ error: 'Accès refusé' });
+  expect(response.headers['x-holbietrips-debug-desk']).toBeUndefined();
+});
 
   it('preserves the intended support journey while the desk is enabled', async () => {
     const app = await buildApp(fakePool(support) as unknown as Pool, { serveFrontend: false, diagnosticsEnabled: true });

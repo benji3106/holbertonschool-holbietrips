@@ -10,13 +10,6 @@ export function registerCatalogRoutes(app: FastifyInstance, context: RouteContex
   /** Loads the configured supplier pack and enriches its runtime representation. */
   const getDestinationPack = async () => {
     const loaded = await loadDestinationPack(settings.destinationPackFile, settings.destinationPackSha256);
-    if (loaded.integrity.calculated !== loaded.integrity.expected && loaded.integrity.accepted) {
-      loaded.pack.destinations = loaded.pack.destinations.map(destination => (
-        destination.slug === 'kyoto-saisons'
-          ? { ...destination, travelTip: `${destination.travelTip} — ${flags.get('A03')}` }
-          : destination
-      ));
-    }
     return loaded;
   };
 

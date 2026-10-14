@@ -6,7 +6,8 @@
   "scripts": {
     "build": "npm run build -w @holbietrips/web && npm run build -w @holbietrips/api && npm run build -w @holbietrips/fake-payment && npm run build -w @holbietrips/fake-mail && tsc -p services/local-gateway/tsconfig.json",
     "test": "vitest run --config vitest.config.ts",
-    "dev": "npm run dev -w @holbietrips/api"
+    "dev": "npm run dev -w @holbietrips/api",
+    "migrate:passports": "tsx scripts/migrate-legacy-passports.ts"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

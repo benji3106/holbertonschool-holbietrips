@@ -114,6 +114,7 @@ export function registerPaymentRoutes(app: FastifyInstance, context: RouteContex
     const status = readText(body.status, 20);
     const providerReference = readText(body.providerReference, 80);
     const cardLast4 = readText(body.cardLast4, 4);
+    const signature = readText(body.signature, 128);
 
     const validPayload = isUuid(bookingId)
       && Number.isInteger(amountCents)
@@ -121,6 +122,11 @@ export function registerPaymentRoutes(app: FastifyInstance, context: RouteContex
       && providerReference.length >= 5
       && /^\d{4}$/.test(cardLast4);
     if (!validPayload) return reply.code(400).send({ error: 'Confirmation invalide' });
+
+    const signedFields = { bookingId, amountCents, status, providerReference, cardLast4 };
+    if (!validSignature(signedFields, signature, settings.paymentKey)) {
+      return reply.code(401).send({ error: 'Signature de paiement invalide' });
+    }
 
     const bookingResult = await pool.query(
       `SELECT id,total_cents FROM bookings
@@ -134,15 +140,20 @@ export function registerPaymentRoutes(app: FastifyInstance, context: RouteContex
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      const updated = await client.query(
+        `UPDATE bookings SET status='confirmed' WHERE id=$1 AND status='pending'`,
+        [bookingId]
+      );
+      if (!updated.rowCount) {
+        await client.query('ROLLBACK');
+        return reply.code(409).send({ error: 'Réservation déjà confirmée' });
+      }
       await client.query(
         `INSERT INTO payments(booking_id,provider_reference,amount_cents,card_last4,status)
          VALUES($1,$2,$3,$4,'approved')
-         ON CONFLICT(booking_id) DO UPDATE
-         SET provider_reference=excluded.provider_reference,amount_cents=excluded.amount_cents,
-             card_last4=excluded.card_last4,status='approved'`,
+         ON CONFLICT(booking_id) DO NOTHING`,
         [bookingId, providerReference, amountCents, cardLast4]
       );
-      await client.query(`UPDATE bookings SET status='confirmed' WHERE id=$1`, [bookingId]);
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');

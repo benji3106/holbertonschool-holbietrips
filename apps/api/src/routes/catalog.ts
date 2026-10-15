@@ -21,14 +21,17 @@ export function registerCatalogRoutes(app: FastifyInstance, context: RouteContex
       return reply.code(400).send({ error: 'Une seule recherche est autorisée' });
     }
 
-    const filter = query
-      ? ` AND (title ILIKE '%${query}%' OR destination ILIKE '%${query}%' OR description ILIKE '%${query}%')`
+        const filter = query
+      ? ' AND (title ILIKE $1 OR destination ILIKE $1 OR description ILIKE $1)'
       : '';
+    const values = query ? [`%${query}%`] : [];
+
     const result = await pool.query(
       `SELECT id,slug,title,destination,description,departure_date,return_date,price_cents,seats_available,image_key
        FROM trips
        WHERE is_published=true${filter}
-       ORDER BY departure_date`
+       ORDER BY departure_date`,
+      values
     );
 
     const { pack } = await getDestinationPack();

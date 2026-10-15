@@ -58,6 +58,10 @@ export function registerBookingRoutes(app: FastifyInstance, context: RouteContex
       .map(code => code.trim())
       .filter(Boolean);
 
+    if (couponCodes.length > 1) {
+      return reply.code(400).send({ error: 'Un seul coupon est autorisé par réservation' });
+    }
+
     if (!isUuid(tripId) || !Number.isInteger(travelers) || travelers < 1 || travelers > 8) {
       return reply.code(400).send({ error: 'Données de réservation invalides' });
     }
@@ -95,10 +99,7 @@ export function registerBookingRoutes(app: FastifyInstance, context: RouteContex
         await client.query('UPDATE coupons SET uses=uses+1 WHERE id=$1', [coupon.id]);
       }
 
-      const hasMultipleCoupons = couponCodes.length > 1;
-      const itineraryNotes = hasMultipleCoupons
-        ? 'Coupon carousel accepted.'
-        : 'Votre itinéraire détaillé sera disponible prochainement.';
+      const itineraryNotes = 'Votre itinéraire détaillé sera disponible prochainement.';
       const reference = `HT-${Date.now().toString(36).toUpperCase()}-${newToken().slice(0, 5).toUpperCase()}`;
       const created = await client.query(
         `INSERT INTO bookings(reference,user_id,trip_id,coupon_id,travelers,total_cents,itinerary_notes)
@@ -113,10 +114,7 @@ export function registerBookingRoutes(app: FastifyInstance, context: RouteContex
       });
       await client.query('COMMIT');
 
-      const responseBooking = hasMultipleCoupons
-        ? { ...created.rows[0], itinerary_notes: `${created.rows[0].itinerary_notes} — ${flags.get('A06')}` }
-        : created.rows[0];
-      return reply.code(201).send({ booking: responseBooking });
+      return reply.code(201).send({ booking: created.rows[0] });
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

@@ -124,18 +124,58 @@ export function registerBookingRoutes(app: FastifyInstance, context: RouteContex
   });
 
   app.post('/api/bookings/:id/cancel', { preHandler: context.requireUser }, async (request, reply) => {
-    const id = (request.params as RequestBody).id;
-    if (!isUuid(id)) return reply.code(400).send({ error: 'Identifiant invalide' });
+  const id = (request.params as RequestBody).id;
+  const user = request.authUser!;
+  if (!isUuid(id)) return reply.code(400).send({ error: 'Identifiant invalide' });
 
-    const result = await pool.query(
-      `UPDATE bookings SET status='cancelled'
-       WHERE id=$1 AND user_id=$2 AND status<>'cancelled'
-       RETURNING id,reference,status`,
-      [id, request.authUser!.id]
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const found = await client.query(
+      'SELECT id,reference,status,user_id FROM bookings WHERE id=$1 FOR UPDATE',
+      [id]
     );
-    if (!result.rowCount) return reply.code(404).send({ error: 'Réservation annulable introuvable' });
-    return { booking: result.rows[0], flag: flags.get('A09') };
-  });
+    const booking = found.rows[0];
+
+    if (!booking || booking.user_id !== user.id) {
+      await recordAudit(client, user, 'booking.cancel.denied', 'booking', id, {
+        result: 'denied',
+        reason: booking ? 'not_owner' : 'not_found'
+      });
+      await client.query('COMMIT');
+      return reply.code(404).send({ error: 'Réservation annulable introuvable' });
+    }
+
+    if (booking.status === 'cancelled') {
+      await recordAudit(client, user, 'booking.cancel.denied', 'booking', id, {
+        result: 'denied',
+        reason: 'already_cancelled',
+        reference: booking.reference
+      });
+      await client.query('COMMIT');
+      return reply.code(404).send({ error: 'Réservation annulable introuvable' });
+    }
+
+    const updated = await client.query(
+      `UPDATE bookings SET status='cancelled' WHERE id=$1 RETURNING id,reference,status`,
+      [id]
+    );
+    await recordAudit(client, user, 'booking.cancelled', 'booking', id, {
+      result: 'success',
+      reference: booking.reference,
+      previousStatus: booking.status
+    });
+    await client.query('COMMIT');
+
+    return { booking: updated.rows[0] };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+});
 
   app.post('/api/bookings/:id/confirm', { preHandler: context.requireUser }, async (request, reply) => {
     const id = (request.params as RequestBody).id;

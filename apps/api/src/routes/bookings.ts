@@ -7,7 +7,7 @@ import type { RouteContext } from './context.js';
 
 /** Registers booking creation, retrieval, cancellation, and confirmation. */
 export function registerBookingRoutes(app: FastifyInstance, context: RouteContext): void {
-  const { pool, flags } = context;
+  const { pool } = context;
 
   app.get('/api/bookings', { preHandler: context.requireUser }, async request => {
     const result = await pool.query(
@@ -195,17 +195,18 @@ export function registerBookingRoutes(app: FastifyInstance, context: RouteContex
     try {
       if (simulateFailure) throw new Error('Local readiness checker unavailable');
       checksPassed = result.rows[0].status === 'pending' && result.rows[0].payment_status === 'approved';
-    } catch {
-      checksPassed = true;
+    } catch (error) {
+      // Fail closed : une vérification impossible n'est jamais une approbation.
+      request.log.warn({ err: error, bookingId: id }, 'booking confirmation check unavailable');
+      return reply.code(503).send({
+        error: 'Vérification temporairement indisponible, veuillez réessayer plus tard'
+      });
     }
 
     if (!checksPassed) {
       return reply.code(409).send({ error: 'La réservation ne peut pas encore être confirmée' });
     }
     await pool.query(`UPDATE bookings SET status='confirmed' WHERE id=$1`, [id]);
-    return {
-      status: 'confirmed',
-      ...(simulateFailure ? { flag: flags.get('A10') } : {})
-    };
+    return { status: 'confirmed' };
   });
 }
